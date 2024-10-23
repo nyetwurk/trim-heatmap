@@ -5,17 +5,17 @@ import pandas as pd
 import seaborn as sbs
 import matplotlib.pyplot as plt
 
-def calc_ranges(ary):
+def calc_ranges(ary, max):
 	buckets = {}
 	for i,v in enumerate(ary):
 		if i == 0:
 			# very start
-			buckets[v] = [ary[i], (ary[i]+ary[i+1])/2-1]
+			buckets[v] = [0, (ary[i]+ary[i+1])/2-1]
 		elif i != len(ary)-1:
 			buckets[v] = [(ary[i-1]+ary[i])/2, (ary[i]+ary[i+1])/2-1]
 		else:
 			# very end
-			buckets[v] = [(ary[i-1]+ary[i])/2, ary[i]]
+			buckets[v] = [(ary[i-1]+ary[i])/2, max]
 	return buckets
 
 def main():
@@ -26,9 +26,10 @@ def main():
 	parser.add_argument('-m', '--min-samples', default=10)
 	parser.add_argument('-r', '--rpm-filter', default=80)
 	parser.add_argument('-w', '--window', default=5)
+	parser.add_argument('-v', '--verbose', action='store_true')
 	args = parser.parse_args()
 
-    #print("Skipping info lines")
+	#print("Skipping info lines")
 	with open(args.filename, 'rb') as f:
 		i=0
 		for line in f:
@@ -65,10 +66,10 @@ def main():
 	lc['rpm_delta'] = lc.rpm.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 	lc['load_delta'] = lc.load.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 
-	#print(lc.to_string())
-
 	# throw out data that moves too much
+	#print(lc.to_string())
 	lc = lc[(lc.rpm_delta < args.rpm_filter) & (lc.load_delta < args.load_filter)]
+	#print(lc.to_string())
 
 	# convert to %
 	lc.loc[:, ["fr_w", "fr2_w", "frm_w", "frm2_w"]] -= 1.0
@@ -80,8 +81,8 @@ def main():
 
 
 	# create bucket ranges
-	rpms = calc_ranges([720, 1000, 1240, 1520, 2000, 2520, 3000, 3520, 4000, 4520, 5000, 5520, 6000, 6520])
-	loads = calc_ranges([9.75, 20.25, 30, 39.75, 50.25, 60, 69.75, 80.25, 90, 99.75, 110.25, 120, 140.25, 159.75])
+	rpms = calc_ranges([720, 1000, 1240, 1520, 2000, 2520, 3000, 3520, 4000, 4520, 5000, 5520, 6000, 6520], 10000)
+	loads = calc_ranges([9.75, 20.25, 30, 39.75, 50.25, 60, 69.75, 80.25, 90, 99.75, 110.25, 120, 140.25, 159.75], 300)
 	#loads = calc_ranges([9.75, 20.25, 30, 39.75, 50.25, 60, 69.75, 80.25, 90, 99.75, 110.25, 140.25, 150, 168])
 
 	# sort into buckets
@@ -96,7 +97,8 @@ def main():
 					lcdata[lk][rk] = round(float(res.fr.mean()), 2)
 				else:
 					lcdata[lk][rk] = round(float(res.frm.mean()), 2)
-				#print(lk, rk, lcdata[lk][rk] )
+				if args.verbose:
+					print(lk, rk, lcdata[lk][rk])
 
 	fig, ax = plt.subplots()
 	ax.tick_params(labelbottom=False,labeltop=True)
@@ -104,6 +106,8 @@ def main():
 	ax.xaxis.set_label_position('top')
 
 	heatmap = pd.DataFrame(lcdata).T
+	heatmap.sort_index(axis=0, ascending=True, inplace=True)
+	heatmap.sort_index(axis=1, ascending=True, inplace=True)
 	sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
 
 	plt.xlabel("RPM")
