@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import argparse
+import math
+import numpy as np
 import pandas as pd
 import seaborn as sbs
 import matplotlib.pyplot as plt
@@ -18,14 +20,18 @@ def calc_ranges(ary, max):
 			buckets[v] = [(ary[i-1]+ary[i])/2, max]
 	return buckets
 
+def distance(x0, y0, x1, y1):
+	return math.hypot(x1-x0, y1-y0)
+
 def main():
-	parser = argparse.ArgumentParser()
-	parser.add_argument('filename', default='log.csv', nargs='*')
-	parser.add_argument('-f', '--use-fr', action='store_true')
-	parser.add_argument('-l', '--load-filter', default=10)
-	parser.add_argument('-m', '--min-samples', default=10)
-	parser.add_argument('-r', '--rpm-filter', default=80)
-	parser.add_argument('-w', '--window', default=5)
+	parser = argparse.ArgumentParser(description='Create trim heatmap for KFKHFM based on fr/frm datalog')
+	parser.add_argument('filename', default='log.csv', nargs='*', help='csv files(s) to parse')
+	parser.add_argument('-w', '--window', type=int, default=5, help='number of sequential rows to detect constant rpm/load (5)')
+	parser.add_argument('-l', '--load-filter', type=int, default=10, help='change in load which is still "constant" load (10)')
+	parser.add_argument('-r', '--rpm-filter', type=int, default=100, help='change in RPM which is still "constant" RPM (100)')
+	parser.add_argument('-m', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
+	parser.add_argument('-f', '--use-fr', action='store_true', help='use "fr" instead of "frm" (the default)')
+	parser.add_argument('-u', '--use-unweighted-mean', action='store_true', help='use unweighted mean instead of weighted average (the default)')
 	parser.add_argument('-v', '--verbose', action='store_true')
 	args = parser.parse_args()
 
@@ -72,7 +78,7 @@ def main():
 
 	# throw out data that moves too much
 	#print(lc.to_string())
-	lc = lc[(lc.rpm_delta < args.rpm_filter) & (lc.load_delta < args.load_filter)]
+	lc = lc[(lc.rpm_delta <= args.rpm_filter) & (lc.load_delta <= args.load_filter)]
 	#print(lc.to_string())
 
 	# convert to %
@@ -89,27 +95,38 @@ def main():
 	loads = calc_ranges([9.75, 20.25, 30, 39.75, 50.25, 60, 69.75, 80.25, 90, 99.75, 110.25, 120, 140.25, 159.75], 300)
 	#loads = calc_ranges([9.75, 20.25, 30, 39.75, 50.25, 60, 69.75, 80.25, 90, 99.75, 110.25, 140.25, 150, 168])
 
-	# sort into buckets
-	lcdata={}
+	# sort lambda control (fr/frm) into buckets
+	frdata={}
 	for lk,lv in loads.items():
-		lcdata[lk]={}
+		frdata[lk]={}
 		for rk,rv in rpms.items():
 			query = f"{rv[0]} <= @lc.rpm <= {rv[1]} & {lv[0]} <= @lc.load <= {lv[1]}"
-			res = lc.query(query)
+			res = lc.query(query).copy()
 			if len(res.index) >= args.min_samples:
-				if args.use_fr:
-					lcdata[lk][rk] = round(float(res.fr.mean()), 2)
-				else:
-					lcdata[lk][rk] = round(float(res.frm.mean()), 2)
+				# size of cell
+				# fixme: for cells at min/max edges this is wrong.
+				radius = distance(lv[0], rv[0], lv[1], rv[1])/2
+				# find distance to cell center
+				res['distance'] = res.apply(lambda row: distance(row.load, row.rpm, lk, rk), axis=1)
+				# weight is proportional to closeness to center: distance = 0 has highest weight
+				res['weight'] = (radius-res.distance)/radius
+				# pick fr or frm
+				fr = ("frm", "fr")[args.use_fr]
+				mean = res[fr].mean()
+				wa = np.average(res[fr], weights = res.weight)
+				# pick mean or weighted average
+				data = (wa, mean)[args.use_unweighted_mean]
+				frdata[lk][rk] = round(data, 3)
 				if args.verbose:
-					print(lk, rk, lcdata[lk][rk])
+					#print(res.to_string())
+					print(f"[{lk},{rk}] mean:{round(mean, 3)} wa:{round(wa, 3)} diff:{round(abs(mean-wa), 3)}")
 
 	fig, ax = plt.subplots()
 	ax.tick_params(labelbottom=False,labeltop=True)
 	ax.xaxis.set_ticks_position('top')
 	ax.xaxis.set_label_position('top')
 
-	heatmap = pd.DataFrame(lcdata).T
+	heatmap = pd.DataFrame(frdata).T
 	heatmap.sort_index(axis=0, ascending=True, inplace=True)
 	heatmap.sort_index(axis=1, ascending=True, inplace=True)
 	sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
