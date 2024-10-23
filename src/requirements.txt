@@ -1,5 +1,4 @@
 argparse
-math
 numpy
 pandas
 seaborn
