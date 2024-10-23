@@ -20,7 +20,7 @@ def calc_ranges(ary, max):
 
 def main():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('filename', default='log.csv', nargs='?')
+	parser.add_argument('filename', default='log.csv', nargs='*')
 	parser.add_argument('-f', '--use-fr', action='store_true')
 	parser.add_argument('-l', '--load-filter', default=10)
 	parser.add_argument('-m', '--min-samples', default=10)
@@ -29,23 +29,27 @@ def main():
 	parser.add_argument('-v', '--verbose', action='store_true')
 	args = parser.parse_args()
 
-	#print("Skipping info lines")
-	with open(args.filename, 'rb') as f:
-		i=0
-		for line in f:
-			line = line.decode('unicode_escape').strip()
-			# First header starts with TimeStamp
-			if line.startswith('TimeStamp'):
-				break
-			#print(line)
-			i = i + 1
+	dfa = []
+	for file in args.filename:
+		#print("Skipping info lines")
+		with open(file, 'rb') as f:
+			i=0
+			for line in f:
+				line = line.decode('unicode_escape').strip()
+				# First header starts with TimeStamp
+				if line.startswith('TimeStamp'):
+					break
+				#print(line)
+				i = i + 1
 
-	#print(f"Loading headers from line {i+1}")
-	#print(f"Loading data from line {i+4}")
+		#print(f"Loading headers from line {i+1}")
+		#print(f"Loading data from line {i+4}")
 
-	# Three header lines
-	df = pd.read_csv(args.filename, sep=",", encoding='unicode_escape', skiprows=i, header=[0,1,2], skipinitialspace=True) 
+		# Three header lines
+		dfa.append(pd.read_csv(file, sep=",", encoding='unicode_escape', skiprows=i, header=[0,1,2], skipinitialspace=True))
 
+	# concat all the dfas into a single frame
+	df = pd.concat(dfa, axis=0, ignore_index=True)
 	# strip junk out of columns
 	df.rename(str.strip, axis='columns', inplace=True)
 
