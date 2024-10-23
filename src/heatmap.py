@@ -21,7 +21,7 @@ def calc_ranges(ary):
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('filename', default='log.csv', nargs='?')
-	parser.add_argument('-f', '--use-frm', action='store_true')
+	parser.add_argument('-f', '--use-fr', action='store_true')
 	parser.add_argument('-l', '--load-filter', default=10)
 	parser.add_argument('-m', '--min-samples', default=10)
 	parser.add_argument('-r', '--rpm-filter', default=80)
@@ -86,26 +86,26 @@ def main():
 
 	# sort into buckets
 	lcdata={}
-	lcmdata={}
 	for lk,lv in loads.items():
 		lcdata[lk]={}
-		lcmdata[lk]={}
 		for rk,rv in rpms.items():
 			query = f"{rv[0]} <= @lc.rpm <= {rv[1]} & {lv[0]} <= @lc.load <= {lv[1]}"
 			res = lc.query(query)
 			if len(res.index) >= args.min_samples:
-				if args.use_frm:
-					lcdata[lk][rk] = round(float(res.frm.mean()), 2)
-				else:
+				if args.use_fr:
 					lcdata[lk][rk] = round(float(res.fr.mean()), 2)
+				else:
+					lcdata[lk][rk] = round(float(res.frm.mean()), 2)
 				#print(lk, rk, lcdata[lk][rk] )
 
-	heatmap = pd.DataFrame(lcdata).T
 	fig, ax = plt.subplots()
 	ax.tick_params(labelbottom=False,labeltop=True)
 	ax.xaxis.set_ticks_position('top')
 	ax.xaxis.set_label_position('top')
-	sax = sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
+
+	heatmap = pd.DataFrame(lcdata).T
+	sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
+
 	plt.xlabel("RPM")
 	plt.ylabel("Load")
 	plt.show()
