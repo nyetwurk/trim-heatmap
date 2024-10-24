@@ -19,14 +19,14 @@ jobs:
       with:
         short-length: 4
 
-    - uses: JackMcKew/pyinstaller-action-windows@main
+    - uses: nyetwurk/pyinstaller-action-windows@main
       with:
         path: src
 
     - uses: actions/upload-artifact@v4
       if: ${{ github.event_name != 'release' }}
       with:
-        name: trim-heatmap-${{ github.ref_name }}-${{ env.GITHUB_SHA_SHORT }}
+        name: trim-heatmap-${{ env.GITHUB_SHA_SHORT }}-win
         path: src/dist/windows
         overwrite: true
 
@@ -34,7 +34,7 @@ jobs:
       if: github.event_name == 'release' && github.event.action == 'created'
       run: |
         cd src/dist/windows
-        zip -qr trim-heatmap-${{ github.ref_name }}.zip .
-        gh release upload ${{ github.ref_name }} trim-heatmap-${{ github.ref_name }}.zip
+        zip -qr trim-heatmap-${{ github.ref_name }}-win.zip .
+        gh release upload ${{ github.ref_name }} trim-heatmap-${{ github.ref_name }}-win.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
