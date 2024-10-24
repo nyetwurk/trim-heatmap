@@ -25,7 +25,7 @@ def distance(x0, y0, x1, y1):
 
 def main():
 	parser = argparse.ArgumentParser(description='Create trim heatmap for KFKHFM based on fr/frm datalog')
-	parser.add_argument('filename', default='log.csv', nargs='*', help='csv files(s) to parse')
+	parser.add_argument('filename', default=['log.csv'], nargs='*', help='csv files(s) to parse (log.csv)')
 	parser.add_argument('-w', '--window', type=int, default=5, help='number of sequential rows to detect constant rpm/load (5)')
 	parser.add_argument('-l', '--load-filter', type=int, default=10, help='change in load which is still "constant" load (10)')
 	parser.add_argument('-r', '--rpm-filter', type=int, default=100, help='change in RPM which is still "constant" RPM (100)')
