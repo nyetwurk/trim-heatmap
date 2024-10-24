@@ -64,5 +64,5 @@ For pure text output, use `--csv` or `--text`
 * Adjust the "previous samples" amount with the `-w WINDOW` option
 * Adjust the "similar" load filter with the `-l LOAD_FILTER` option
 * Adjust the "similar" RPM filter with the `-r RPM_FILTER` option
-* Adjust the "minimum number of samples" filter with the `-m MIN_SAMPLES` option
+* Adjust the "minimum number of samples" filter with the `-s MIN_SAMPLES` option
 * Choose an unweighted mean using the `-u` option. The default is to weight the samples by their distance from the "center" of their cell.

@@ -26,10 +26,11 @@ def distance(x0, y0, x1, y1):
 def main():
 	parser = argparse.ArgumentParser(description='Create trim heatmap for KFKHFM based on fr/frm datalog')
 	parser.add_argument('filename', default=['log.csv'], nargs='*', help='csv files(s) to parse (log.csv)')
-	parser.add_argument('-w', '--window', type=int, default=5, help='number of sequential rows to detect constant rpm/load (5)')
-	parser.add_argument('-l', '--load-filter', type=int, default=10, help='change in load which is still "constant" load (10)')
+	parser.add_argument('-w', '--window', type=int, default=10, help='number of sequential rows to detect constant rpm/load (10)')
+	parser.add_argument('-l', '--load-filter', type=float, default=10, help='change in load which is still "constant" load (10)')
 	parser.add_argument('-r', '--rpm-filter', type=int, default=100, help='change in RPM which is still "constant" RPM (100)')
-	parser.add_argument('-m', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
+	parser.add_argument('-m', '--maf-filter', type=float, default=10, help='change in MAF which is still "constant" MAF (10)')
+	parser.add_argument('-s', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
 	parser.add_argument('-f', '--use-fr', action='store_true', help='use "fr" instead of "frm" (the default)')
 	parser.add_argument('-u', '--use-unweighted-mean', action='store_true', help='use unweighted mean instead of weighted average (the default)')
 	parser.add_argument('-v', '--verbose', action='count', default=0)
@@ -61,16 +62,19 @@ def main():
 	# strip junk out of columns
 	df.rename(str.strip, axis='columns', inplace=True)
 
-	# pick frm or fr
-	whichfr = ('frm', 'fr')[args.use_fr or 'frm' not in df]
 	# pick rl or frm_w
 	whichrl = ('rl', 'rl_w')['rl_w' in df]
+	# pick nmot or nmot_w
+	whichnmot = ('nmot', 'nmot_w')['nmot_w' in df]
+	# pick frm or fr
+	whichfr = ('frm', 'fr')[args.use_fr or 'frm' not in df]
 
 	# FIXME: handle case where fr/frm fr2/frm2 aren't around
-	# grab only the things we need, rename rl/nmot to load/rpm
-	lc = df[["nmot", whichrl, whichfr + "_w", whichfr + "2_w"]]. \
+	# grab only the things we need, rename rl/nmot/mshfm to load/rpm/maf
+	lc = df[[whichnmot, whichrl, whichfr + "_w", whichfr + "2_w", "mshfm_w"]]. \
 		rename(columns={whichrl:'load'}). \
-		rename(columns={'nmot':'rpm'})
+		rename(columns={whichnmot:'rpm'}). \
+		rename(columns={'mshfm_w':'maf'})
 
 	# flatten index
 	lc.columns = lc.columns.get_level_values(0)
@@ -78,14 +82,23 @@ def main():
 	# extract lambda control
 	lc['rpm_delta'] = lc.rpm.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 	lc['load_delta'] = lc.load.rolling(window=args.window).apply(lambda x: x.max() - x.min())
-
-	# throw out data that moves too much
-	#print(lc.to_string())
-	lc = lc[(lc.rpm_delta <= args.rpm_filter) & (lc.load_delta <= args.load_filter)]
-	#print(lc.to_string())
+	lc['maf_delta'] = lc.maf.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 
 	# average bank1 and bank2, convert to %
 	lc['fr'] = (lc[[whichfr+'_w',whichfr+'2_w']].mean(axis=1) - 1) * 100
+
+	# tag rows we want to use
+	lc['use'] = \
+		lc.rpm_delta.notnull()  & (lc.rpm_delta  <= args.rpm_filter)  & \
+		lc.load_delta.notnull() & (lc.load_delta <= args.load_filter) & \
+		lc.maf_delta.notnull()  & (lc.maf_delta  <= args.maf_filter)
+
+	#print(lc[(abs(lc.fr)>5) & (lc.rpm_delta > 0)].to_string())
+
+	# throw out data that moves too much
+	#print(lc.to_string())
+	lc = lc[(lc['use'])]
+	#print(lc.to_string())
 
 	# create bucket ranges
 	rpms = calc_ranges([720, 1000, 1240, 1520, 2000, 2520, 3000, 3520, 4000, 4520, 5000, 5520, 6000, 6520], 10000)
