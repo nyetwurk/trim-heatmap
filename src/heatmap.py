@@ -32,7 +32,9 @@ def main():
 	parser.add_argument('-m', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
 	parser.add_argument('-f', '--use-fr', action='store_true', help='use "fr" instead of "frm" (the default)')
 	parser.add_argument('-u', '--use-unweighted-mean', action='store_true', help='use unweighted mean instead of weighted average (the default)')
-	parser.add_argument('-v', '--verbose', action='store_true')
+	parser.add_argument('-v', '--verbose', action='count', default=0)
+	parser.add_argument('--text', action='store_true', help='output as text, no GUI')
+	parser.add_argument('--csv', action='store_true', help='output as csv, no GUI')
 	args = parser.parse_args()
 
 	dfa = []
@@ -59,15 +61,16 @@ def main():
 	# strip junk out of columns
 	df.rename(str.strip, axis='columns', inplace=True)
 
-	# normalize column names
-	if 'rl_w' in df:
-		lc = df[["nmot", "rl_w", "fr_w", "fr2_w", "frm_w", "frm2_w"]]
-		lc = lc.rename(columns={'rl_w':'load'})
-	else:
-		lc = df[["nmot", "rl", "fr_w", "fr2_w", "frm_w", "frm2_w"]]
-		lc = lc.rename(columns={'rl':'load'})
+	# pick frm or fr
+	whichfr = ('frm', 'fr')[args.use_fr or 'frm' not in df]
+	# pick rl or frm_w
+	whichrl = ('rl', 'rl_w')['rl_w' in df]
 
-	lc.rename(columns={'nmot':'rpm'}, inplace=True)
+	# FIXME: handle case where fr/frm fr2/frm2 aren't around
+	# grab only the things we need, rename rl/nmot to load/rpm
+	lc = df[["nmot", whichrl, whichfr + "_w", whichfr + "2_w"]]. \
+		rename(columns={whichrl:'load'}). \
+		rename(columns={'nmot':'rpm'})
 
 	# flatten index
 	lc.columns = lc.columns.get_level_values(0)
@@ -81,14 +84,8 @@ def main():
 	lc = lc[(lc.rpm_delta <= args.rpm_filter) & (lc.load_delta <= args.load_filter)]
 	#print(lc.to_string())
 
-	# convert to %
-	lc.loc[:, ["fr_w", "fr2_w", "frm_w", "frm2_w"]] -= 1.0
-	lc.loc[:, ["fr_w", "fr2_w", "frm_w", "frm2_w"]] *= 100
-
-	# average bank1 and bank2
-	lc['fr'] = lc[['fr_w','fr2_w']].mean(axis=1)
-	lc['frm'] = lc[['frm_w','frm2_w']].mean(axis=1)
-
+	# average bank1 and bank2, convert to %
+	lc['fr'] = (lc[[whichfr+'_w',whichfr+'2_w']].mean(axis=1) - 1) * 100
 
 	# create bucket ranges
 	rpms = calc_ranges([720, 1000, 1240, 1520, 2000, 2520, 3000, 3520, 4000, 4520, 5000, 5520, 6000, 6520], 10000)
@@ -103,32 +100,43 @@ def main():
 			query = f"{rv[0]} <= @lc.rpm <= {rv[1]} & {lv[0]} <= @lc.load <= {lv[1]}"
 			res = lc.query(query).copy()
 			if len(res.index) >= args.min_samples:
-				# size of cell
-				# fixme: for cells at min/max edges this is wrong.
-				radius = distance(lv[0], rv[0], lv[1], rv[1])/2
+				# size of cell, center to corner
+				cellradius = distance(lv[0], rv[0], lv[1], rv[1])/2
 				# find distance to cell center
+				# FIXME: this is not right for cells at edges of map, but we have to weight data off the map somehow
 				res['distance'] = res.apply(lambda row: distance(row.load, row.rpm, lk, rk), axis=1)
 				# weight is proportional to closeness to center: distance = 0 has highest weight
-				res['weight'] = (radius-res.distance)/radius
-				# pick fr or frm
-				fr = ("frm", "fr")[args.use_fr]
-				mean = res[fr].mean()
-				wa = np.average(res[fr], weights = res.weight)
+				res['weight'] = (cellradius-res.distance)/cellradius
+				mean = res.fr.mean()
+				wa = np.average(res.fr, weights = res.weight)
 				# pick mean or weighted average
 				data = (wa, mean)[args.use_unweighted_mean]
 				frdata[lk][rk] = round(data, 3)
+				if args.verbose>1:
+					print(res.to_string())
 				if args.verbose:
-					#print(res.to_string())
 					print(f"[{lk},{rk}] mean:{round(mean, 3)} wa:{round(wa, 3)} diff:{round(abs(mean-wa), 3)}")
+
+	heatmap = pd.DataFrame(frdata). \
+		dropna(how="all", axis=0). \
+		dropna(how="all", axis=1). \
+		sort_index(axis=0, ascending=True). \
+		sort_index(axis=1, ascending=True).T
+
+	if args.text:
+		print(heatmap.sort_index(axis=0, ascending=False).to_string())
+
+	if args.csv:
+		print(heatmap.to_csv())
+
+	if args.text or args.csv:
+		return 0
 
 	fig, ax = plt.subplots()
 	ax.tick_params(labelbottom=False,labeltop=True)
 	ax.xaxis.set_ticks_position('top')
 	ax.xaxis.set_label_position('top')
 
-	heatmap = pd.DataFrame(frdata).T
-	heatmap.sort_index(axis=0, ascending=True, inplace=True)
-	heatmap.sort_index(axis=1, ascending=True, inplace=True)
 	sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
 
 	plt.xlabel("RPM")
