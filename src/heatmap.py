@@ -52,14 +52,15 @@ def quantized_heatmap(lc, args):
 				# Don't let weights get negative due to weird radius calcs
 				res['weight'] = np.maximum((cellradius-res.distance)/cellradius, 0.1)
 				mean = res.fr.mean()
+				median = res.fr.median()
 				wa = np.average(res.fr, weights = res.weight)
-				# pick mean or weighted average
-				data = (wa, mean)[args.use_unweighted_mean]
+				# pick median or weighted average
+				data = (wa, median)[args.use_unweighted_median]
 				frdata[lk][rk] = round(data, 3)
 				if args.verbose>1:
 					print(res.to_string())
-				if args.verbose:
-					print(f"[{lk},{rk}] mean:{round(mean, 3)} wa:{round(wa, 3)} diff:{round(abs(mean-wa), 3)}")
+				if args.verbose and abs(median-wa) >= 0.5:
+					print(f"[{lk},{rk}] median:{round(median, 3)} mean:{round(mean, 3)} wa:{round(wa, 3)} diff:{round(median-wa, 3)}")
 	heatmap = pd.DataFrame(frdata). \
 		dropna(how='all', axis=0). \
 		dropna(how='all', axis=1). \
@@ -82,7 +83,7 @@ def main():
 	parser.add_argument('-s', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
 	parser.add_argument('-f', '--use-fr', action='store_true', help='use "fr" instead of "frm" (default is frm)')
 
-	parser.add_argument('-u', '--use-unweighted-mean', action='store_true', help='use unweighted mean instead of weighted average (default is weighted))')
+	parser.add_argument('-u', '--use-unweighted-median', action='store_true', help='use unweighted median instead of weighted average (default is weighted))')
 	parser.add_argument('-c', '--continuous', action='store_true', help='show continuous instead of bucketed heatmap (default is bucketed)')
 
 	parser.add_argument('-v', '--verbose', action='count', default=0)

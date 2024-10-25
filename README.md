@@ -73,4 +73,4 @@ For pure text output, use `--csv` or `--text`
 ![heatmap](./examples/heatmap-continuous.png)
 
 * Choose `frm` instead of `fr` with the `-fr` option
-* Choose an unweighted mean using the `-u` option. The default is to weight the samples by their distance from the "center" of their cell (does not apply to `-c`)
+* Choose an unweighted median using the `-u` option. The default is to average the samples weighted by their distance from the "center" of their cell (does not apply to `-c`). Use `-v` to see the difference between the weighted average and the mean.
