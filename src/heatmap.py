@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import os
 import argparse
 import math
 import numpy as np
@@ -27,13 +28,17 @@ def main():
 	parser = argparse.ArgumentParser(description='Create trim heatmap for KFKHFM based on fr/frm datalog')
 	parser.add_argument('filename', default=['log.csv'], nargs='*', help='csv files(s) to parse (log.csv)')
 	parser.add_argument('-w', '--window', type=int, default=10, help='number of sequential rows to detect constant rpm/load (10)')
+
 	parser.add_argument('-l', '--load-filter', type=float, default=10, help='change in load which is still "constant" load (10)')
 	parser.add_argument('-r', '--rpm-filter', type=int, default=100, help='change in RPM which is still "constant" RPM (100)')
 	parser.add_argument('-m', '--maf-filter', type=float, default=10, help='change in MAF which is still "constant" MAF (10)')
+
 	parser.add_argument('-s', '--min-samples', type=int, default=10, help='minimum number of samples required to generate a cell (10)')
 	parser.add_argument('-f', '--use-fr', action='store_true', help='use "fr" instead of "frm" (the default)')
 	parser.add_argument('-u', '--use-unweighted-mean', action='store_true', help='use unweighted mean instead of weighted average (the default)')
+
 	parser.add_argument('-v', '--verbose', action='count', default=0)
+
 	parser.add_argument('--text', action='store_true', help='output as text, no GUI')
 	parser.add_argument('--csv', action='store_true', help='output as csv, no GUI')
 	args = parser.parse_args()
@@ -55,7 +60,7 @@ def main():
 		#print(f"Loading data from line {i+4}")
 
 		# Three header lines
-		dfa.append(pd.read_csv(file, sep=",", encoding='unicode_escape', skiprows=i, header=[0,1,2], skipinitialspace=True))
+		dfa.append(pd.read_csv(file, sep=',', encoding='unicode_escape', skiprows=i, header=[0,1,2], skipinitialspace=True))
 
 	# concat all the dfas into a single frame
 	df = pd.concat(dfa, axis=0, ignore_index=True)
@@ -67,11 +72,18 @@ def main():
 	# pick nmot or nmot_w
 	whichnmot = ('nmot', 'nmot_w')['nmot_w' in df]
 	# pick frm or fr
-	whichfr = ('frm', 'fr')[args.use_fr or 'frm' not in df]
+	whichfr = ('frm', 'fr')[args.use_fr or 'frm_w' not in df]
 
-	# FIXME: handle case where fr/frm fr2/frm2 aren't around
+	rows = [whichnmot, whichrl, whichfr + '_w', 'mshfm_w']
+
+	if whichfr + '2_w' in df:
+		rows.append(whichfr + '2_w')
+
+	if args.verbose:
+		print(f"using {rows} from log")
+
 	# grab only the things we need, rename rl/nmot/mshfm to load/rpm/maf
-	lc = df[[whichnmot, whichrl, whichfr + "_w", whichfr + "2_w", "mshfm_w"]]. \
+	lc = df[rows]. \
 		rename(columns={whichrl:'load'}). \
 		rename(columns={whichnmot:'rpm'}). \
 		rename(columns={'mshfm_w':'maf'})
@@ -80,14 +92,19 @@ def main():
 	lc.columns = lc.columns.get_level_values(0)
 
 	# extract lambda control
+	if whichfr + '2_w' in df:
+		# average bank1 and bank2, convert to %
+		lc['fr'] = (lc[[whichfr+'_w',whichfr+'2_w']].mean(axis=1) - 1) * 100
+	else:
+		# convert to %
+		lc['fr'] = (lc[whichfr+'_w'] - 1) * 100
+
+	# set up filter source data
 	lc['rpm_delta'] = lc.rpm.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 	lc['load_delta'] = lc.load.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 	lc['maf_delta'] = lc.maf.rolling(window=args.window).apply(lambda x: x.max() - x.min())
 
-	# average bank1 and bank2, convert to %
-	lc['fr'] = (lc[[whichfr+'_w',whichfr+'2_w']].mean(axis=1) - 1) * 100
-
-	# tag rows we want to use
+	# tag rows we want to use based on source data
 	lc['use'] = \
 		lc.rpm_delta.notnull()  & (lc.rpm_delta  <= args.rpm_filter)  & \
 		lc.load_delta.notnull() & (lc.load_delta <= args.load_filter) & \
@@ -118,8 +135,9 @@ def main():
 				# find distance to cell center
 				# FIXME: this is not right for cells at edges of map, but we have to weight data off the map somehow
 				res['distance'] = res.apply(lambda row: distance(row.load, row.rpm, lk, rk), axis=1)
-				# weight is proportional to closeness to center: distance = 0 has highest weight
-				res['weight'] = (cellradius-res.distance)/cellradius
+				# Weight is proportional to closeness to center: distance = 0 has highest weight
+				# Don't let weights get negative due to weird radius calcs
+				res['weight'] = np.maximum((cellradius-res.distance)/cellradius, 0.1)
 				mean = res.fr.mean()
 				wa = np.average(res.fr, weights = res.weight)
 				# pick mean or weighted average
@@ -131,8 +149,8 @@ def main():
 					print(f"[{lk},{rk}] mean:{round(mean, 3)} wa:{round(wa, 3)} diff:{round(abs(mean-wa), 3)}")
 
 	heatmap = pd.DataFrame(frdata). \
-		dropna(how="all", axis=0). \
-		dropna(how="all", axis=1). \
+		dropna(how='all', axis=0). \
+		dropna(how='all', axis=1). \
 		sort_index(axis=0, ascending=True). \
 		sort_index(axis=1, ascending=True).T
 
@@ -146,15 +164,22 @@ def main():
 		return 0
 
 	fig, ax = plt.subplots()
+	if len(args.filename) == 1:
+		fig.canvas.manager.set_window_title(os.path.basename(args.filename[0]))
+	else:
+		fig.canvas.manager.set_window_title('Trim heatmap')
+
 	ax.tick_params(labelbottom=False,labeltop=True)
 	ax.xaxis.set_ticks_position('top')
 	ax.xaxis.set_label_position('top')
 
 	sbs.heatmap(heatmap, annot=True, center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
 
-	plt.xlabel("RPM")
-	plt.ylabel("Load")
+	plt.xlabel('RPM')
+	plt.ylabel('Load')
 	plt.show()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	main()
+
+# vim: ft=python noexpandtab
