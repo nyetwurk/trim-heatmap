@@ -1,12 +1,44 @@
 #!/usr/bin/env python
 
+# internal modules
 import os
+import sys
+import glob
+import platform
+import subprocess
 import argparse
 import math
+
+# external modules
 import numpy as np
 import pandas as pd
 import seaborn as sbs
 import matplotlib.pyplot as plt
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
+# ChatGPT got this somewhat right, but not really
+def needs_python_glob():
+	# Test for known systems that have useful shells
+	system = platform.system().lower()
+	if system in ['linux','darwin'] or system.startswith('cygwin'):
+		return False
+
+	# Cygwin bash will report 'Windows' if using python.exe and not cygwin python.
+	if system == 'windows':
+		# detect CYGWIN. Typically SHELL is not defined unless CYGWIN
+		return 'CYGWIN' not in os.environ and 'MSYSTEM' not in os.environ and 'SHELL' not in os.environ
+
+	# Test if the shell expands the '*' wildcard by checking if it returns expanded files
+	try:
+		# In cygwin, if using python.exe, this will spawn cmd.exe, so make sure we catch cygwin above
+		# This will expand '*' if the shell supports glob expansion, otherwise return as-is
+		output = subprocess.check_output('echo *', shell=True, text=True)
+		# If the output lists files (not "*"), we assume glob expansion worked
+		return '*' in output
+	except subprocess.CalledProcessError:
+		return True
 
 def calc_ranges(ary, max):
 	buckets = {}
@@ -92,18 +124,35 @@ def main():
 	parser.add_argument('--csv', action='store_true', help='output as csv, no GUI')
 	args = parser.parse_args()
 
+	# do globbing ourselves if we need to
+	if needs_python_glob():
+		if args.verbose:
+			print('Platform may not provide glob, using our own')
+		filenames = []
+		for file in args.filename:
+			files = glob.glob(file)
+			if len(files) == 0:
+				eprint(f"No such file: '{file}'")
+				return 1
+			filenames += glob.glob(file)
+		args.filename = filenames
+
 	dfa = []
 	for file in args.filename:
 		#print("Skipping info lines")
-		with open(file, 'rb') as f:
-			i=0
-			for line in f:
-				line = line.decode('unicode_escape').strip()
-				# First header starts with TimeStamp
-				if line.startswith('TimeStamp'):
-					break
-				#print(line)
-				i = i + 1
+		try:
+			with open(file, 'rb') as f:
+				i=0
+				for line in f:
+					line = line.decode('unicode_escape').strip()
+					# First header starts with TimeStamp
+					if line.startswith('TimeStamp'):
+						break
+					#print(line)
+					i = i + 1
+		except Exception as error:
+			eprint(error)
+			return 1
 
 		#print(f"Loading headers from line {i+1}")
 		#print(f"Loading data from line {i+4}")
