@@ -60,9 +60,17 @@ For pure text output, use `--csv` or `--text`
 
 ## Adjusting the filters
 
-* Choose `frm` instead of `fr` with the `-fr` option
 * Adjust the "previous samples" amount with the `-w WINDOW` option
 * Adjust the "similar" load filter with the `-l LOAD_FILTER` option
 * Adjust the "similar" RPM filter with the `-r RPM_FILTER` option
 * Adjust the "minimum number of samples" filter with the `-s MIN_SAMPLES` option
-* Choose an unweighted mean using the `-u` option. The default is to weight the samples by their distance from the "center" of their cell.
+* Disable the filter entirely with `-n`
+
+## Adjusting the heatmap
+
+* Show a continuous heatmap (instead of bucketed for KFKHFM) with `-c`
+
+![heatmap](./examples/heatmap-continuous.png)
+
+* Choose `frm` instead of `fr` with the `-fr` option
+* Choose an unweighted mean using the `-u` option. The default is to weight the samples by their distance from the "center" of their cell (does not apply to `-c`)
