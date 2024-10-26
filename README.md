@@ -30,13 +30,19 @@ See also [requirements.txt](./src/requirements.txt)
 
 ## Running
 
-### Windows cmd.exe
+This is a command line utility. It does not have a GUI. If you don't know what `cmd.exe` or `/bin/sh` is, this tool is not for you.
+
+### Windows `cmd.exe`
 
 `C:\PATH\TO\HEATMAP\INSTALL\DIR\heatmap.exe log.csv`
 
 `heatmap.exe C:\PATH\TO_\SV\log.csv`
 
 `C:\PATH\TO\HEATMAP\INSTALL\DIR\heatmap.exe log.csv log2.csv log3.csv`
+
+You can also use the built in filename globbing to do this for you:
+
+`C:\PATH\TO\HEATMAP\INSTALL\DIR\heatmap.exe *.csv`
 
 ### Linux/MacOS shell
 
@@ -48,11 +54,11 @@ See also [requirements.txt](./src/requirements.txt)
 
 `/path/to/heatmap/dir/src/heatmap.py log.csv log2.csv log3.csv`
 
-You can also use shell globbing to do this for you (not supported in windows yet):
+You can also use shell globbing to do this for you:
 
 `/path/to/heatmap_dir/src/heatmap.py *.csv`
 
-As usual, you can always add `heatmap.py` or `heatmap.exe` to your `PATH`
+As usual, you can always add `heatmap.py` or `heatmap.exe` to your `PATH`!
 
 ### Headless
 
