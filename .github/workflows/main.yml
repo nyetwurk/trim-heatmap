@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [ main ]
   release:
-    types: [ created ]
+    types: [ published ]
 
 jobs:
   build:
@@ -31,10 +31,10 @@ jobs:
         overwrite: true
 
     - name: Upload Artifact to Release
-      if: github.event_name == 'release' && github.event.action == 'created'
+      if: github.event_name == 'release' && github.event.action == 'published'
       run: |
         cd src/dist/windows
         zip -qr trim-heatmap-${{ github.ref_name }}-win.zip .
-        gh release upload ${{ github.ref_name }} trim-heatmap-${{ github.ref_name }}-win.zip
+        gh release upload --clobber ${{ github.ref_name }} trim-heatmap-${{ github.ref_name }}-win.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
