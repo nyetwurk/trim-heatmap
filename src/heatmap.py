@@ -54,7 +54,8 @@ def calc_ranges(ary, max):
 	return buckets
 
 def continuous_heatmap(lc):
-	lc['load'] = lc['load'].round(1)
+	lc['load'] = lc['load'].round(0)
+	lc['rpm'] = (lc['rpm']/10).round(0) * 10
 	heatmap = lc.pivot_table(index='load', columns='rpm', values='fr')
 	return heatmap.dropna(how='all', axis=0).dropna(how='all', axis=1)
 
