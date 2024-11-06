@@ -3,6 +3,7 @@
 # internal modules
 import os
 import sys
+import signal
 import glob
 import platform
 import subprocess
@@ -14,6 +15,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sbs
 import matplotlib.pyplot as plt
+
+def signal_handler(sig, frame):
+    sys.exit(0)
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -242,6 +246,8 @@ def main():
 
 	plt.xlabel('RPM')
 	plt.ylabel('Load')
+
+	signal.signal(signal.SIGINT, signal_handler)
 	plt.show()
 
 if __name__ == '__main__':
