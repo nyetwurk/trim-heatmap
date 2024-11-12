@@ -242,7 +242,7 @@ def main():
 	ax.xaxis.set_ticks_position('top')
 	ax.xaxis.set_label_position('top')
 
-	sbs.heatmap(heatmap, annot=(not args.continuous), center=0, cmap='PiYG', cbar_kws={'label': '% trim'}).invert_yaxis()
+	sbs.heatmap(heatmap, annot=(not args.continuous), center=0, cmap='PiYG_r', cbar_kws={'label': '% trim'}).invert_yaxis()
 
 	plt.xlabel('RPM')
 	plt.ylabel('Load')
