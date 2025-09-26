@@ -15,6 +15,7 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        cache: 'pip'
 
     - name: Install dependencies
       run: |
@@ -43,6 +44,17 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
+        cache: 'pip'
+
+    - name: Cache PyInstaller build
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/build
+          src/dist
+        key: ${{ runner.os }}-pyinstaller-${{ hashFiles('src/heatmap.py', 'src/heatmap.spec', 'src/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pyinstaller-
 
     - name: Install dependencies
       run: |
@@ -53,7 +65,7 @@ jobs:
     - name: Build executable
       run: |
         cd src
-        pyinstaller --clean -y --dist ./dist/windows --workpath /tmp heatmap.spec
+        pyinstaller -y --dist ./dist/windows --workpath /tmp heatmap.spec
 
     - uses: actions/upload-artifact@v4
       if: ${{ github.event_name != 'release' }}
