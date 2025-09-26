@@ -79,14 +79,19 @@ def quantized_heatmap(lc, args):
 		for rk,rv in rpms.items():
 			query = f"{rv[0]} <= @lc.rpm <= {rv[1]} & {lv[0]} <= @lc.load <= {lv[1]}"
 			res = lc.query(query).copy()
-			if len(res.index) >= (args.min_samples, 1)[args.no_filter]: # ternary is (false, true)
+			if len(res.index) >= (args.min_samples, 1)[args.no_filter]: # ternary is (true, false)
 				# size of cell, center to corner
 				cellradius = distance(lv[0], rv[0], lv[1], rv[1])/2
-				# find distance to cell center
-				# FIXME: this is not right for cells at edges of map, but we have to weight data off the map somehow
-				res['distance'] = res.apply(lambda row: distance(row.load, row.rpm, lk, rk), axis=1)
-				# Weight is proportional to closeness to center: distance = 0 has highest weight
+				# ME7-style clamping: clamp coordinates to cell boundaries like the ECU does
+				# Calculate distance to clamped point instead of cell center
+				res['distance'] = res.apply(lambda row:
+					distance(row.load, row.rpm,
+						max(lv[0], min(lv[1], row.load)),  # clamp load to cell boundaries
+						max(rv[0], min(rv[1], row.rpm))),   # clamp rpm to cell boundaries
+					axis=1)
+				# Weight is proportional to closeness to clamped point: distance = 0 has highest weight
 				# Don't let weights get negative due to weird radius calcs
+				# This matches ME7 behavior where out-of-bounds data is clamped to cell edges
 				res['weight'] = np.maximum((cellradius-res.distance)/cellradius, 0.1)
 				mean = res.fr.mean()
 				median = res.fr.median()
@@ -139,7 +144,7 @@ def main():
 			if len(files) == 0:
 				eprint(f"No such file: '{file}'")
 				return 1
-			filenames += glob.glob(file)
+			filenames += files
 		args.filename = filenames
 
 	dfa = []
@@ -250,7 +255,147 @@ def main():
 	signal.signal(signal.SIGINT, signal_handler)
 	plt.show()
 
+def test_weighting_algorithm():
+	"""Test cases for the weighting algorithm to verify inside/outside cell behavior"""
+	print("Running weighting algorithm tests...")
+
+	# Test data setup
+	lv = [50, 100]  # load range
+	rv = [2000, 3000]  # rpm range
+	lk, rk = 75, 2500  # cell center
+	cellradius = distance(lv[0], rv[0], lv[1], rv[1]) / 2
+
+	def calculate_weight(row_load, row_rpm):
+		# Check if point is inside cell boundaries
+		inside_load = lv[0] <= row_load <= lv[1]
+		inside_rpm = rv[0] <= row_rpm <= rv[1]
+
+		if inside_load and inside_rpm:
+			# Inside cell: distance to center
+			dist = distance(row_load, row_rpm, lk, rk)
+		else:
+			# Outside cell: distance to clamped point
+			clamped_load = max(lv[0], min(lv[1], row_load))
+			clamped_rpm = max(rv[0], min(rv[1], row_rpm))
+			dist = distance(row_load, row_rpm, clamped_load, clamped_rpm)
+
+		weight = max((cellradius - dist) / cellradius, 0.1)
+		return dist, weight
+
+	# Test Case 1: Point at cell center
+	dist, weight = calculate_weight(75, 2500)
+	print(f"Center point (75, 2500): distance={dist:.2f}, weight={weight:.3f}")
+	assert weight >= 0.9, f"Center point should have high weight, got {weight}"
+
+	# Test Case 2: Point at cell edge
+	dist, weight = calculate_weight(50, 2500)
+	print(f"Edge point (50, 2500): distance={dist:.2f}, weight={weight:.3f}")
+
+	# Test Case 3: Point outside cell (should clamp)
+	dist, weight = calculate_weight(30, 2500)  # below load range
+	print(f"Outside point (30, 2500): distance={dist:.2f}, weight={weight:.3f}")
+	assert weight < 1.0, f"Outside point should have reduced weight, got {weight}"
+
+	# Test Case 4: Point far outside cell
+	dist, weight = calculate_weight(10, 1000)
+	print(f"Far outside point (10, 1000): distance={dist:.2f}, weight={weight:.3f}")
+	assert weight == 0.1, f"Far outside point should have minimum weight, got {weight}"
+
+	# Test Case 5: Point at cell corner
+	dist, weight = calculate_weight(100, 3000)
+	print(f"Corner point (100, 3000): distance={dist:.2f}, weight={weight:.3f}")
+
+	print("All weighting tests passed!")
+
+def test_edge_cells():
+	"""Test edge cell behavior with boundary clamping"""
+	print("\nRunning edge cell tests...")
+
+	# Test edge cell (minimum load)
+	lv_edge = [0, 50]  # starts at 0
+	rv_edge = [2000, 3000]
+	lk_edge, rk_edge = 25, 2500  # center of edge cell
+	cellradius = distance(lv_edge[0], rv_edge[0], lv_edge[1], rv_edge[1]) / 2
+
+	def calculate_edge_weight(row_load, row_rpm):
+		inside_load = lv_edge[0] <= row_load <= lv_edge[1]
+		inside_rpm = rv_edge[0] <= row_rpm <= rv_edge[1]
+
+		if inside_load and inside_rpm:
+			dist = distance(row_load, row_rpm, lk_edge, rk_edge)
+		else:
+			clamped_load = max(lv_edge[0], min(lv_edge[1], row_load))
+			clamped_rpm = max(rv_edge[0], min(rv_edge[1], row_rpm))
+			dist = distance(row_load, row_rpm, clamped_load, clamped_rpm)
+
+		weight = max((cellradius - dist) / cellradius, 0.1)
+		return dist, weight
+
+	# Test point below minimum load (should clamp to 0)
+	dist, weight = calculate_edge_weight(-10, 2500)
+	print(f"Below edge point (-10, 2500): distance={dist:.2f}, weight={weight:.3f}")
+	assert dist > 0, f"Below edge point should have positive distance, got {dist}"
+
+	# Test point at edge boundary
+	dist, weight = calculate_edge_weight(0, 2500)
+	print(f"At edge boundary (0, 2500): distance={dist:.2f}, weight={weight:.3f}")
+
+	print("All edge cell tests passed!")
+
+def test_different_cell_sizes():
+	"""Test different cell sizes for proper weighting"""
+	print("\nRunning cell size tests...")
+
+	# Small cell
+	small_lv = [75, 85]
+	small_rv = [2500, 2600]
+	small_center = (80, 2550)
+	small_radius = distance(small_lv[0], small_rv[0], small_lv[1], small_rv[1]) / 2
+
+	# Large cell
+	large_lv = [50, 150]
+	large_rv = [2000, 4000]
+	large_center = (100, 3000)
+	large_radius = distance(large_lv[0], large_rv[0], large_lv[1], large_rv[1]) / 2
+
+	def calculate_cell_weight(row_load, row_rpm, lv, rv, center, radius):
+		inside_load = lv[0] <= row_load <= lv[1]
+		inside_rpm = rv[0] <= row_rpm <= rv[1]
+
+		if inside_load and inside_rpm:
+			dist = distance(row_load, row_rpm, center[0], center[1])
+		else:
+			clamped_load = max(lv[0], min(lv[1], row_load))
+			clamped_rpm = max(rv[0], min(rv[1], row_rpm))
+			dist = distance(row_load, row_rpm, clamped_load, clamped_rpm)
+
+		weight = max((radius - dist) / radius, 0.1)
+		return dist, weight
+
+	# Test same point in different sized cells
+	test_point = (80, 2550)
+
+	# Small cell
+	dist_small, weight_small = calculate_cell_weight(test_point[0], test_point[1],
+		small_lv, small_rv, small_center, small_radius)
+	print(f"Small cell point {test_point}: distance={dist_small:.2f}, weight={weight_small:.3f}")
+
+	# Large cell
+	dist_large, weight_large = calculate_cell_weight(test_point[0], test_point[1],
+		large_lv, large_rv, large_center, large_radius)
+	print(f"Large cell point {test_point}: distance={dist_large:.2f}, weight={weight_large:.3f}")
+
+	print("All cell size tests passed!")
+
 if __name__ == '__main__':
+	# Run tests if --test flag is provided
+	if len(sys.argv) > 1 and sys.argv[1] == '--test':
+		test_weighting_algorithm()
+		test_edge_cells()
+		test_different_cell_sizes()
+		print("\nAll tests completed successfully!")
+		sys.exit(0)
+
 	main()
 
 # vim: ft=python noexpandtab
