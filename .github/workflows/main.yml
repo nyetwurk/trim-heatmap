@@ -27,9 +27,9 @@ jobs:
         python heatmap.py --test
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: test
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: github.ref == 'refs/heads/main' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -39,9 +39,21 @@ jobs:
       with:
         short-length: 4
 
-    - uses: nyetwurk/pyinstaller-action-windows@main
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
-        path: src
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        cd src
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build executable
+      run: |
+        cd src
+        pyinstaller --clean -y --dist ./dist/windows --workpath /tmp heatmap.spec
 
     - uses: actions/upload-artifact@v4
       if: ${{ github.event_name != 'release' }}
@@ -50,11 +62,20 @@ jobs:
         path: src/dist/windows
         overwrite: true
 
+    - name: Create Release from Tag
+      if: startsWith(github.ref, 'refs/tags/') && github.event_name != 'release'
+      run: |
+        cd src/dist/windows
+        Compress-Archive -Path * -DestinationPath trim-heatmap-${{ github.ref_name }}-win.zip -Force
+        gh release create ${{ github.ref_name }} --title "Release ${{ github.ref_name }}" --generate-notes trim-heatmap-${{ github.ref_name }}-win.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Upload Artifact to Release
       if: github.event_name == 'release' && github.event.action == 'published'
       run: |
         cd src/dist/windows
-        zip -qr trim-heatmap-${{ github.ref_name }}-win.zip .
+        Compress-Archive -Path * -DestinationPath trim-heatmap-${{ github.ref_name }}-win.zip -Force
         gh release upload --clobber ${{ github.ref_name }} trim-heatmap-${{ github.ref_name }}-win.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
